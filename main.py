@@ -2,6 +2,7 @@
 
   python main.py run                 live morning loop (what GitHub Actions runs)
   python main.py replay 2026-10-20   print what it would have sent that day
+  python main.py record [date]       after the close: save the day's alerts and results to data/
   python main.py test                send a test message
   python main.py chat-id             show your Telegram chat id (message the bot first)
 
@@ -100,7 +101,7 @@ class Day:
                 store[s] = _merge(store.get(s, []), v)
 
     def has_bar(self, sym, bar_start):
-        return any(b[0] == bar_start for b in self.b5.get(sym, [])[-5:])
+        return any(b[0] == bar_start for b in reversed(self.b5.get(sym, [])))
 
     def alerts(self, now):
         X = spy_ctx(self.b5.get("SPY"), now, self.date)
@@ -226,6 +227,61 @@ def replay(date, send=False):
         telegram.send(f"📋 Replay of {date} ({len(uni)} names, {api.feed.upper()} data)\n" + summary(rows, uni).replace("Morning done", "Alerts"))
 
 
+RULES = "v5 · A+/A (1H pivot) · ext 1.0/1.6/1.0/0.8 · ATR ≥ 3% · 5 of 5 · 9:40–11:00 · 20m cooldown · ADD raises first stop"
+
+
+def record(date=None):
+    """After the close: save that day's alerts and final results to data/ (the workflow commits them)."""
+    import csv
+    import json
+    now = time.time()
+    e = datetime.fromtimestamp(now, ET)
+    date = date or e.date().isoformat()
+    if date == e.date().isoformat() and (e.weekday() >= 5 or e.hour * 60 + e.minute < 16 * 60):
+        print(f"{date}: market not closed yet ({e:%a %H:%M} ET), nothing recorded.")
+        return
+    api = Alpaca()
+    day = Day(api, date)
+    close = min(et_at(date, 16, 0), int(now))
+    uni = day.screen(close)
+    day.load(close)
+    if not day.has_bar("SPY", day.open_t):
+        print(f"{date}: no SPY bars, market closed. Nothing recorded.")
+        return
+    rows = day.alerts(close)
+    first = [r for r in rows if r["first"]]
+    rec = dict(date=date, feed=api.feed, risk=RISK, rules=RULES, recorded_at=datetime.fromtimestamp(now, ET).isoformat(timespec="seconds"),
+               names=[dict(sym=s, gap=round(day.gaps[s], 4) if s in day.gaps else None) for s in uni],
+               first_R=round(sum(r["r"] for r in first), 3), all_R=round(sum(r["r"] for r in rows), 3),
+               alerts=[dict(time=hhmm(r["t"]), t=r["t"], sym=r["sym"], type="ADD" if r.get("add") else "repeat" if r.get("repeat") else "first",
+                            grade=r["g"], spy_up=r["spy_up"], entry=round(r["entry"], 4), stop=round(r["stop"], 4), target=round(r["tgt"], 4),
+                            qty=r["qty"], result=r["res"], r=round(r["r"], 3), usd=round(r["r"] * RISK, 2), rvx=round(r["rvx"], 2),
+                            move_from=r.get("move_from"), move_to=r.get("move_to")) for r in rows])
+    out = ROOT / "data" / "days"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{date}.json").write_text(json.dumps(rec, indent=1) + "\n")
+    # rebuild the two CSVs from every saved day, so a re-run never duplicates rows
+    days = [json.loads(p.read_text()) for p in sorted(out.glob("*.json"))]
+    cols = ["date", "time", "sym", "type", "grade", "spy_up", "entry", "stop", "target", "qty", "result", "r", "usd"]
+    with open(ROOT / "data" / "trades.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for d in days:
+            for a in d["alerts"]:
+                w.writerow([d["date"]] + [a[c] for c in cols[1:]])
+    with open(ROOT / "data" / "days.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "names", "alerts", "tickers", "first_R", "first_usd", "all_R", "feed"])
+        for d in days:
+            n1 = sum(1 for a in d["alerts"] if a["type"] == "first")
+            w.writerow([d["date"], len(d["names"]), len(d["alerts"]), n1, d["first_R"], round(d["first_R"] * d["risk"], 2), d["all_R"], d["feed"]])
+    tot = sum(d["first_R"] for d in days)
+    print(f"{date}: saved {len(rows)} alerts on {len(first)} tickers, first-per-ticker {rec['first_R']:+.2f}R · {len(days)} days on file, {tot:+.2f}R total")
+    if os.environ.get("RECORD_NOTIFY"):
+        telegram.send(f"📒 Saved {date}: {len(rows)} alerts on {len(first)} tickers, {rec['first_R']:+.2f}R ({px(rec['first_R'] * RISK)}). "
+                      f"{len(days)} days on file, {tot:+.2f}R total.\n{FOOT}")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
     if cmd == "run":
@@ -235,6 +291,8 @@ if __name__ == "__main__":
         replay(sys.argv[2])
     elif cmd == "send-day":  # one Telegram message with that day's alerts
         replay(sys.argv[2], send=True)
+    elif cmd == "record":  # after the close; optional date to backfill
+        record(sys.argv[2] if len(sys.argv) > 2 else None)
     elif cmd == "test":
         telegram.send(f"✅ Bell Alerts test message. Alerts arrive here on 5-minute closes, 9:40–11:00 ET.\n{FOOT}")
     elif cmd == "chat-id":

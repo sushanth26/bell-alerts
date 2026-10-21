@@ -1,0 +1,42 @@
+name: record-day
+on:
+  schedule:
+    # 4:15 PM ET in daylight and in standard time; a run before 4:00 PM ET exits, a second run just rewrites the same file
+    - cron: '15 20 * * 1-5'
+    - cron: '15 21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'day to save (YYYY-MM-DD); empty = today'
+        required: false
+permissions:
+  contents: write
+concurrency:
+  group: record-day
+  cancel-in-progress: false
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -u main.py record ${{ inputs.date }}
+        env:
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RECORD_NOTIFY: '1'
+          FEED: ${{ vars.FEED || 'iex' }}
+          RISK: ${{ vars.RISK || '100' }}
+      - name: Commit the day
+        run: |
+          git config user.name "bell-alerts bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
+          git commit -m "Record ${{ inputs.date || 'today' }} paper results"
+          git pull --rebase -q && git push
