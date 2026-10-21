@@ -1,0 +1,149 @@
+{
+ "date": "2026-10-21",
+ "feed": "iex",
+ "risk": 100.0,
+ "rules": "v5 \u00b7 A+/A (1H pivot) \u00b7 ext 1.0/1.6/1.0/0.8 \u00b7 ATR \u2265 3% \u00b7 5 of 5 \u00b7 9:40\u201311:00 \u00b7 20m cooldown \u00b7 ADD raises first stop",
+ "recorded_at": "2026-10-21T16:53:53-04:00",
+ "names": [
+  {
+   "sym": "WDC",
+   "gap": 0.0437
+  },
+  {
+   "sym": "CRWV",
+   "gap": 0.0359
+  },
+  {
+   "sym": "HOOD",
+   "gap": 0.0318
+  },
+  {
+   "sym": "MSTR",
+   "gap": 0.0264
+  },
+  {
+   "sym": "BMNR",
+   "gap": 0.0232
+  },
+  {
+   "sym": "TSLA",
+   "gap": 0.0227
+  },
+  {
+   "sym": "AKAM",
+   "gap": 0.0208
+  }
+ ],
+ "first_R": 2.269,
+ "all_R": 4.668,
+ "alerts": [
+  {
+   "time": "9:45",
+   "t": 1792590300,
+   "sym": "TSLA",
+   "type": "first",
+   "grade": "A+",
+   "spy_up": false,
+   "entry": 385.31,
+   "stop": 379.2596,
+   "target": 394.3856,
+   "qty": 16,
+   "result": "open",
+   "r": 0.218,
+   "usd": 21.82,
+   "rvx": 2.04,
+   "move_from": null,
+   "move_to": null
+  },
+  {
+   "time": "9:50",
+   "t": 1792590600,
+   "sym": "MSTR",
+   "type": "first",
+   "grade": "A",
+   "spy_up": true,
+   "entry": 146.905,
+   "stop": 142.0832,
+   "target": 154.1376,
+   "qty": 20,
+   "result": "target",
+   "r": 1.5,
+   "usd": 150.0,
+   "rvx": 2.08,
+   "move_from": null,
+   "move_to": null
+  },
+  {
+   "time": "10:20",
+   "t": 1792592400,
+   "sym": "TSLA",
+   "type": "ADD",
+   "grade": "A+",
+   "spy_up": false,
+   "entry": 385.85,
+   "stop": 379.7996,
+   "target": 394.9256,
+   "qty": 16,
+   "result": "open",
+   "r": 0.129,
+   "usd": 12.89,
+   "rvx": 2.15,
+   "move_from": 379.25961995846274,
+   "move_to": 379.79961995846276
+  },
+  {
+   "time": "10:25",
+   "t": 1792592700,
+   "sym": "MSTR",
+   "type": "ADD",
+   "grade": "A",
+   "spy_up": false,
+   "entry": 147.99,
+   "stop": 143.1682,
+   "target": 155.2226,
+   "qty": 20,
+   "result": "target",
+   "r": 1.5,
+   "usd": 150.0,
+   "rvx": 2.76,
+   "move_from": 142.0832437658884,
+   "move_to": 143.1682437658884
+  },
+  {
+   "time": "10:40",
+   "t": 1792593600,
+   "sym": "BMNR",
+   "type": "first",
+   "grade": "A",
+   "spy_up": false,
+   "entry": 23.51,
+   "stop": 22.7299,
+   "target": 24.6801,
+   "qty": 128,
+   "result": "open",
+   "r": 0.551,
+   "usd": 55.12,
+   "rvx": 1.56,
+   "move_from": null,
+   "move_to": null
+  },
+  {
+   "time": "10:45",
+   "t": 1792593900,
+   "sym": "MSTR",
+   "type": "ADD",
+   "grade": "A",
+   "spy_up": true,
+   "entry": 149.66,
+   "stop": 144.8382,
+   "target": 156.8926,
+   "qty": 20,
+   "result": "open",
+   "r": 0.769,
+   "usd": 76.94,
+   "rvx": 3.07,
+   "move_from": 143.1682437658884,
+   "move_to": 144.8382437658884
+  }
+ ]
+}
