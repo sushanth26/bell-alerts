@@ -229,6 +229,7 @@ if __name__ == "__main__":
     if cmd == "run":
         run()
     elif cmd == "replay":
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)  # replays only print
         replay(sys.argv[2])
     elif cmd == "test":
         telegram.send(f"✅ Bell Alerts test message. Alerts arrive here on 5-minute closes, 9:40–11:00 ET.\n{FOOT}")
