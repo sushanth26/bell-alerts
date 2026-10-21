@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'run = live morning loop · test = send a Telegram test message · replay = print a past day (no messages) · send-day = send a day's alerts as one message'
+        description: 'run = live morning loop · test = send a Telegram test message · replay = print a past day (no messages) · send-day = send all alerts of a day as one message'
         type: choice
         options: [test, replay, send-day, run]
         default: test
