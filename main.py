@@ -211,10 +211,10 @@ def et_min_of(t):
     return d.hour * 60 + d.minute
 
 
-def replay(date):
+def replay(date, send=False):
     api = Alpaca()
     day = Day(api, date)
-    close = et_at(date, 16, 0)
+    close = min(et_at(date, 16, 0), int(time.time()))
     uni = day.screen(close)
     day.load(close)
     print(f"{date}: {len(uni)} names ({api.feed}): {' '.join(uni)}\n")
@@ -222,6 +222,8 @@ def replay(date):
     for r in rows:
         print(message(r).replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").split("\n<a")[0], "\n")
     print(summary(rows, uni).replace("<i>", "").replace("</i>", ""))
+    if send:
+        telegram.send(f"📋 Replay of {date} ({len(uni)} names, {api.feed.upper()} data)\n" + summary(rows, uni).replace("Morning done", "Alerts"))
 
 
 if __name__ == "__main__":
@@ -231,6 +233,8 @@ if __name__ == "__main__":
     elif cmd == "replay":
         os.environ.pop("TELEGRAM_BOT_TOKEN", None)  # replays only print
         replay(sys.argv[2])
+    elif cmd == "send-day":  # one Telegram message with that day's alerts
+        replay(sys.argv[2], send=True)
     elif cmd == "test":
         telegram.send(f"✅ Bell Alerts test message. Alerts arrive here on 5-minute closes, 9:40–11:00 ET.\n{FOOT}")
     elif cmd == "chat-id":
