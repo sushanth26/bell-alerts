@@ -5,6 +5,12 @@ on:
     - cron: '20 13 * * 1-5'   # 9:20 ET while daylight time is on (Mar-Nov)
     - cron: '20 14 * * 1-5'   # 9:20 ET in standard time (Nov-Mar); the other run exits at once
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'run = live morning loop · test = send a Telegram test message'
+        type: choice
+        options: [test, run]
+        default: test
 concurrency:
   group: bell-alerts
   cancel-in-progress: false
@@ -17,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -u main.py run
+      - run: python -u main.py ${{ inputs.mode || 'run' }}
         env:
           ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
