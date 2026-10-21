@@ -1,0 +1,27 @@
+name: bell-alerts
+on:
+  schedule:
+    # GitHub cron is UTC and can start a few minutes late, so it starts at 9:20 ET and the app waits for 9:35.
+    - cron: '20 13 * * 1-5'   # 9:20 ET while daylight time is on (Mar-Nov)
+    - cron: '20 14 * * 1-5'   # 9:20 ET in standard time (Nov-Mar); the other run exits at once
+  workflow_dispatch:
+concurrency:
+  group: bell-alerts
+  cancel-in-progress: false
+jobs:
+  morning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -u main.py run
+        env:
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FEED: ${{ vars.FEED || 'iex' }}
+          RISK: ${{ vars.RISK || '100' }}

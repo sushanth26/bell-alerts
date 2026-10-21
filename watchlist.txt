@@ -1,0 +1,1 @@
+# Tickers to watch every morning on top of the gap screen, separated by spaces or new lines.
