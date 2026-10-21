@@ -29,7 +29,6 @@ jobs:
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RECORD_NOTIFY: '1'
           FEED: ${{ vars.FEED || 'iex' }}
           RISK: ${{ vars.RISK || '100' }}
       - name: Commit the day
