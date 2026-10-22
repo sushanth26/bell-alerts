@@ -143,7 +143,9 @@ async function health() {
     if (hit) return rows.push([runState(hit), label, runText(hit), link(hit)]);
     if (!now.wd) return rows.push(['idle', label, 'Weekend: not scheduled', '']);
     if (now.min < dueBy) return rows.push(['idle', label, `Not due yet (expected by ${Math.floor(dueBy / 60) % 12 || 12}:${String(dueBy % 60).padStart(2, '0')} ET)`, '']);
-    rows.push(['bad', label, 'Did not start. Run it from Actions → Run workflow.', `<a href="https://github.com/${REPO}/actions" target="_blank" rel="noopener">Actions</a>`]);
+    const end = `${Math.floor(to / 60) % 12 || 12}:${String(to % 60).padStart(2, '0')}`;
+    if (now.min >= to) return rows.push(['bad', label, `Missed today: no run between its start and ${end} ET. Clears at the next scheduled run.`, '']);
+    rows.push(['bad', label, `Did not start. Run it now from Actions → ${name} → Run workflow, before ${end} ET.`, `<a href="https://github.com/${REPO}/actions" target="_blank" rel="noopener">Actions</a>`]);
   }
   job('bell-bot', 'Bot morning run (trades 9:40–11:00)', 540, 660, 575);
   job('bell-bot', 'Bot close-out (3:35 PM)', 930, 960, 950);
