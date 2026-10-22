@@ -139,7 +139,7 @@ async function health() {
   const runText = x => `${x.status !== 'completed' ? 'running since' : x.conclusion === 'success' ? 'ran OK at' : x.conclusion + ' at'} ${clock(x.created_at)} ET`;
   const link = x => `<a href="${x.html_url}" target="_blank" rel="noopener">log</a>`;
   function job(name, label, from, to, dueBy) {
-    const hit = today.filter(x => x.name === name && etMin(x.created_at) >= from && etMin(x.created_at) < to)[0];
+    const hit = today.filter(x => x.name === name && etMin(x.created_at) >= from && etMin(x.created_at) < to).pop(); /* GitHub lists newest first: take the window's first run */
     if (hit) return rows.push([runState(hit), label, runText(hit), link(hit)]);
     if (!now.wd) return rows.push(['idle', label, 'Weekend: not scheduled', '']);
     if (now.min < dueBy) return rows.push(['idle', label, `Not due yet (expected by ${Math.floor(dueBy / 60) % 12 || 12}:${String(dueBy % 60).padStart(2, '0')} ET)`, '']);
@@ -148,7 +148,7 @@ async function health() {
   job('bell-bot', 'Bot morning run (trades 9:40–11:00)', 540, 660, 575);
   job('bell-bot', 'Bot close-out (3:35 PM)', 930, 960, 950);
   job('bell-alerts', 'Telegram alerts run', 540, 660, 575);
-  const last = today.filter(x => x.name === 'bell-bot').pop();
+  const last = today.find(x => x.name === 'bell-bot');
   if (last) rows.push([runState(last), 'Latest bot job', runText(last), link(last)]);
 
   try {
