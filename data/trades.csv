@@ -5,3 +5,4 @@ date,time,ticker,type,grade,spy_vs_vwap,entry,stop,target,qty,result,r,usd
 2026-10-21,10:25,MSTR,ADD,A,below,147.99,143.17,155.22,20,target,1.50,150.00
 2026-10-21,10:40,BMNR,first,A,below,23.51,22.73,24.68,128,open,0.55,55.12
 2026-10-21,10:45,MSTR,ADD,A,above,149.66,144.84,156.89,20,open,0.77,76.94
+2026-10-22,09:40,PANW,first,A,above,362.88,353.89,376.38,11,stop,-1.00,-100.00
