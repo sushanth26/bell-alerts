@@ -5,8 +5,12 @@
   python main.py record [date]       after the close: add the day's alerts to data/trades.csv
   python main.py test                send a test message
   python main.py chat-id             show your Telegram chat id (message the bot first)
+  python main.py trade               Bell Bot: the same alerts as bracket orders in your Alpaca account
+                                     (9:20-11:00 ET trades, 15:30-16:00 ET closes the bot's positions)
+  python main.py trade report        today's bot orders and P&L
 
-Research only, not investment advice. It never places, reviews or cancels orders.
+Research only, not investment advice. The alerts never place orders; only `trade` does, in the account
+whose keys you set, and only when you set TRADING=on (see bell_alerts/trader.py).
 """
 import os
 import sys
@@ -264,6 +268,59 @@ def record(date=None):
     print(f"{date}: saved {len(new)} alerts · {len(allrows)} rows in data/trades.csv")
 
 
+def trade(cmd=None):
+    from bell_alerts.trader import Trader
+    now = time.time()
+    e = datetime.fromtimestamp(now, ET)
+    date, mins = e.date().isoformat(), e.hour * 60 + e.minute
+    bot = Trader(date, RISK)
+    print(f"Bell Bot {date} · {bot.mode} · risk {px(RISK)} · max {bot.max_trades} trades · stop at -{bot.max_loss_r:g}R")
+    if cmd == "report":
+        print("\n".join(bot.report()) or "No bot orders today.")
+        return
+    if e.weekday() >= 5:
+        print("Weekend: nothing to do.")
+        return
+    if 15 * 60 + 30 <= mins < 16 * 60:
+        print("\n".join(bot.flatten()) or "Nothing to close.")
+        return
+    if not (9 * 60 <= mins < LAST_MIN):
+        print(f"Outside trading windows ({e:%H:%M} ET): nothing to do.")
+        return
+    api = Alpaca()
+    day = Day(api, date)
+    wait_until(et_at(date, 9, 35) + 8)
+    uni = day.screen(time.time())
+    day.load(time.time())
+    if not day.has_bar("SPY", day.open_t):
+        print("No SPY bar at 9:30: market closed today.")
+        return
+    print(f"Watching {len(uni)} names: {' '.join(uni)}")
+    seen = set()
+    bar_end = max(et_at(date, 9, 40), (int(time.time()) // 300) * 300)
+    while et_min_of(bar_end) < LAST_MIN:
+        wait_until(bar_end + 6)
+        try:
+            for _ in range(10):  # a bar can land a few seconds late
+                day.refresh(time.time())
+                if day.has_bar("SPY", bar_end - 300):
+                    break
+                time.sleep(6)
+            now = time.time()
+            for r in day.alerts(now):
+                k = f"{r['sym']}|{r['t']}"
+                if k not in seen:
+                    seen.add(k)
+                    print(f"{hhmm(r['t'])} {bot.on_alert(r, late=now - r['t'] > 6 * 60)}")
+            bot.expire_entries()
+        except Exception as err:
+            print(f"{hhmm(bar_end)} error: {err}")
+        bar_end += 300
+    wait_until(bar_end + 6)
+    bot.expire_entries()
+    print("\n".join(bot.report()))
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
     if cmd == "run":
@@ -275,6 +332,8 @@ if __name__ == "__main__":
         replay(sys.argv[2], send=True)
     elif cmd == "record":  # after the close; optional date to backfill
         record(sys.argv[2] if len(sys.argv) > 2 else None)
+    elif cmd == "trade":
+        trade(sys.argv[2] if len(sys.argv) > 2 else None)
     elif cmd == "test":
         telegram.send(f"✅ Bell Alerts test message. Alerts arrive here on 5-minute closes, 9:40–11:00 ET.\n{FOOT}")
     elif cmd == "chat-id":
