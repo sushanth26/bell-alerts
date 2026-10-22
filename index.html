@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bell Bot</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--ink:#1d1d1b;--mute:#6b6b66;--line:#e4e4df;--up:#13804b;--dn:#c2372b;--warn:#a76a00;--chip:#efefea}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#ececE8;--mute:#9b9b95;--line:#2f2f2c;--up:#3fbf7f;--dn:#ef6a5c;--warn:#e0a640;--chip:#2a2a27}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin-bottom:16px}
+h1{font-size:20px;margin:0}
+.sub{color:var(--mute);font-size:13px}
+select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;background:var(--chip);font-size:12px;font-weight:600}
+.pill.on{color:var(--up)}.pill.off{color:var(--warn)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .k{color:var(--mute);font-size:12px}.tile .v{font-size:22px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:16px;overflow:hidden}
+.card h2{font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mute);font-weight:500;font-size:12px}
+th:nth-child(-n+2),td:nth-child(-n+2){text-align:left}
+tr:last-child td{border-bottom:0}
+.up{color:var(--up)}.dn{color:var(--dn)}.mu{color:var(--mute)}
+.log{font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;padding:10px 14px;max-height:360px;overflow:auto;white-space:pre-wrap}
+.empty{padding:16px 14px;color:var(--mute)}
+.warn{color:var(--warn);font-weight:600}
+footer{color:var(--mute);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Bell Bot <span id="mode" class="pill"></span></h1>
+      <div class="sub" id="asof">Loading…</div>
+    </div>
+    <select id="day" aria-label="Day"></select>
+  </header>
+  <div class="card"><h2>System health · today</h2><div class="scroll" id="health"><div class="empty">Checking…</div></div></div>
+  <div class="tiles" id="tiles"></div>
+  <div class="card"><h2>Trades</h2><div class="scroll" id="trades"></div></div>
+  <div class="card"><h2>Bot log</h2><div class="log" id="log"></div></div>
+  <footer>Updates every 5 minutes while the bot trades (9:40–11:00 ET) and every 15 minutes after. Paper account unless switched to live. Research only, not investment advice.</footer>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const money = x => x == null ? '–' : (x < 0 ? '−$' : '$') + Math.abs(x).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const signed = (x, d = 2, suf = '') => x == null ? '–' : (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(d) + suf;
+const cls = x => x > 0 ? 'up' : x < 0 ? 'dn' : 'mu';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+let current = null;
+
+async function getJSON(path) {
+  const r = await fetch(path + '?t=' + Date.now(), {cache: 'no-store'});
+  if (!r.ok) throw new Error(path + ': ' + r.status);
+  return r.json();
+}
+
+async function loadDays() {
+  let days = [];
+  try { days = await getJSON('data/bot/days.json'); } catch {}
+  const sel = $('day');
+  const keep = sel.value;
+  sel.innerHTML = days.slice().reverse().map(d => `<option value="${d}">${d}</option>`).join('');
+  if (keep && days.includes(keep)) sel.value = keep;
+  return days;
+}
+
+function render(s) {
+  const t = s.trades || [];
+  const done = t.filter(x => ['target', 'stop', 'closed'].includes(x.result));
+  const open = t.filter(x => x.result === 'open');
+  const wins = done.filter(x => (x.pnl || 0) > 0).length;
+  const realized = done.reduce((a, x) => a + (x.pnl || 0), 0);
+  $('mode').textContent = s.armed ? s.mode : 'Dry run';
+  $('mode').className = 'pill ' + (s.armed ? 'on' : 'off');
+  const at = new Date(s.asOf);
+  $('asof').innerHTML = `${esc(s.date)} · updated ${at.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'})} ET · $${s.risk} risk per trade · max ${s.maxTrades} trades · stops at −${s.maxLossR}R`
+    + (s.halted ? ` · <span class="warn">Stopped: ${esc(s.halted)}</span>` : '');
+  const tiles = [
+    ['Day P&L', `<span class="${cls(s.dayPnl)}">${money(s.dayPnl)}</span>`],
+    ['Day R', `<span class="${cls(s.dayR)}">${signed(s.dayR, 2, 'R')}</span>`],
+    ['Trades', `${t.filter(x => x.entry).length}<span class="mu" style="font-size:14px"> filled / ${t.length} sent</span>`],
+    ['Win rate', done.length ? `${Math.round(wins / done.length * 100)}%<span class="mu" style="font-size:14px"> of ${done.length}</span>` : '–'],
+    ['Open now', String(open.length)],
+    ['Realized', `<span class="${cls(realized)}">${money(realized)}</span>`],
+  ];
+  $('tiles').innerHTML = tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  const label = {target: 'Target', stop: 'Stop', closed: 'Closed 3:35', open: 'Open', canceled: 'Not filled', expired: 'Expired', rejected: 'Rejected', new: 'Waiting', accepted: 'Waiting'};
+  $('trades').innerHTML = t.length ? `<table><thead><tr><th>Time</th><th>Ticker</th><th>Qty</th><th>Entry</th><th>Stop</th><th>Target</th><th>Exit</th><th>Result</th><th>P&L</th><th>R</th></tr></thead><tbody>${
+    t.map(x => `<tr><td>${esc(x.time)}</td><td><b>${esc(x.sym)}</b></td><td>${x.filled || x.qty}</td><td>${x.entry != null ? x.entry.toFixed(2) : `<span class="mu">≤${(x.limit || 0).toFixed(2)}</span>`}</td><td>${x.stop != null ? x.stop.toFixed(2) : '–'}</td><td>${x.target != null ? x.target.toFixed(2) : '–'}</td><td>${x.exit != null ? x.exit.toFixed(2) : '–'}</td><td>${esc(label[x.result] || x.result)}</td><td class="${cls(x.pnl)}">${money(x.pnl)}</td><td class="${cls(x.r)}">${signed(x.r)}</td></tr>`).join('')
+  }</tbody></table>` : `<div class="empty">No trades ${s.armed ? 'yet' : '(dry run: see the log for what it would buy)'}.</div>`;
+  const log = (s.log || []).slice().reverse();
+  $('log').textContent = log.length ? log.join('\n') : 'Nothing logged yet.';
+}
+
+async function refresh() {
+  const days = await loadDays();
+  const d = $('day').value || days[days.length - 1];
+  try {
+    const s = await getJSON(d ? `data/bot/${d}.json` : 'data/bot/status.json');
+    current = d;
+    render(s);
+  } catch (e) {
+    $('asof').textContent = 'No bot data yet. It appears after the bot’s first run.';
+  }
+}
+/* ---------- System health: GitHub jobs, the desk's 9:15 list, bot freshness ---------- */
+const REPO = location.hostname.endsWith('github.io')
+  ? `${location.hostname.split('.')[0]}/${location.pathname.split('/')[1]}` : 'sushanth26/bell-alerts';
+const etNow = () => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hour12: false})
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  return {date: `${p.year}-${p.month}-${p.day}`, min: (+p.hour % 24) * 60 + +p.minute, wd: !['Sat', 'Sun'].includes(p.weekday)};
+};
+const etDate = iso => new Date(iso).toLocaleDateString('en-CA', {timeZone: 'America/New_York'});
+const etMin = iso => { const [h, m] = new Date(iso).toLocaleTimeString('en-GB', {timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit'}).split(':'); return +h * 60 + +m; };
+const clock = iso => new Date(iso).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York'});
+const dot = s => `<span class="${s === 'ok' ? 'up' : s === 'bad' ? 'dn' : s === 'run' ? 'warn' : 'mu'}">●</span>`;
+
+async function health() {
+  const now = etNow();
+  const rows = [];
+  let runs = [];
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/actions/runs?per_page=60`, {cache: 'no-store'});
+    runs = r.ok ? (await r.json()).workflow_runs || [] : [];
+    if (!r.ok) rows.push(['bad', 'GitHub', `Could not read job status (${r.status})`, '']);
+  } catch { rows.push(['bad', 'GitHub', 'Could not reach GitHub', '']); }
+  const today = runs.filter(x => etDate(x.created_at) === now.date);
+  const runState = x => x.status !== 'completed' ? 'run' : x.conclusion === 'success' ? 'ok' : x.conclusion === 'cancelled' ? 'idle' : 'bad';
+  const runText = x => `${x.status !== 'completed' ? 'running since' : x.conclusion === 'success' ? 'ran OK at' : x.conclusion + ' at'} ${clock(x.created_at)} ET`;
+  const link = x => `<a href="${x.html_url}" target="_blank" rel="noopener">log</a>`;
+  function job(name, label, from, to, dueBy) {
+    const hit = today.filter(x => x.name === name && etMin(x.created_at) >= from && etMin(x.created_at) < to)[0];
+    if (hit) return rows.push([runState(hit), label, runText(hit), link(hit)]);
+    if (!now.wd) return rows.push(['idle', label, 'Weekend: not scheduled', '']);
+    if (now.min < dueBy) return rows.push(['idle', label, `Not due yet (expected by ${Math.floor(dueBy / 60) % 12 || 12}:${String(dueBy % 60).padStart(2, '0')} ET)`, '']);
+    rows.push(['bad', label, 'Did not start. Run it from Actions → Run workflow.', `<a href="https://github.com/${REPO}/actions" target="_blank" rel="noopener">Actions</a>`]);
+  }
+  job('bell-bot', 'Bot morning run (trades 9:40–11:00)', 540, 660, 575);
+  job('bell-bot', 'Bot close-out (3:35 PM)', 930, 960, 950);
+  job('bell-alerts', 'Telegram alerts run', 540, 660, 575);
+  const last = today.filter(x => x.name === 'bell-bot').pop();
+  if (last) rows.push([runState(last), 'Latest bot job', runText(last), link(last)]);
+
+  try {
+    const t = await (await fetch('data/list915.txt?t=' + Date.now(), {cache: 'no-store'})).text();
+    const [head, ...rest] = t.split('\n');
+    const names = rest.join(' ').trim();
+    const fresh = head.includes(now.date);
+    rows.push([fresh ? 'ok' : (now.wd && now.min > 560 ? 'bad' : 'idle'), 'Desk 9:15 list (from your Mac)',
+      fresh ? (names ? `Today: ${esc(names)}` : 'Today: no names made the list') : `Last list ${esc(head.replace('#', '').trim() || 'never')}${now.wd && now.min > 560 ? ' · today’s did not arrive (Mac off or Claude closed at 9:05?)' : ''}`, '']);
+  } catch { rows.push(['idle', 'Desk 9:15 list (from your Mac)', 'No list yet', '']); }
+
+  try {
+    const s = await getJSON('data/bot/status.json');
+    const age = Math.round((Date.now() - new Date(s.asOf)) / 60000);
+    const trading = now.wd && now.min >= 580 && now.min < 665;
+    rows.push([s.date === now.date ? (trading && age > 12 ? 'bad' : 'ok') : 'idle', 'Bot status update',
+      `${s.date === now.date ? '' : s.date + ' · '}${age < 1 ? 'just now' : age < 120 ? age + ' min ago' : clock(s.asOf) + ' ET'} · ${esc(s.armed ? s.mode : 'dry run')}${s.halted ? ' · stopped: ' + esc(s.halted) : ''}`, '']);
+  } catch { rows.push(['idle', 'Bot status update', 'Nothing yet: appears after the bot’s first run', '']); }
+
+  $('health').innerHTML = `<table><tbody>${rows.map(([s, k, v, l]) => `<tr><td style="width:24px">${dot(s)}</td><td><b>${k}</b></td><td style="text-align:left;white-space:normal">${v}</td><td>${l}</td></tr>`).join('')}</tbody></table>`;
+}
+
+$('day').onchange = refresh;
+refresh();
+health();
+setInterval(refresh, 60000);
+setInterval(health, 120000);
+</script>
+</body>
+</html>

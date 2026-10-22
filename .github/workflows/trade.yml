@@ -6,6 +6,7 @@ on:
     - cron: '20 14 * * 1-5'
     - cron: '35 19 * * 1-5'   # 15:35 ET: close what the bot still holds
     - cron: '35 20 * * 1-5'
+    - cron: '*/15 15-21 * * 1-5'  # dashboard refresh every 15 minutes between the windows (report only)
   workflow_dispatch:
     inputs:
       mode:
@@ -16,6 +17,8 @@ on:
 concurrency:
   group: bell-bot
   cancel-in-progress: false
+permissions:
+  contents: write   # the bot pushes data/bot/*.json for the dashboard
 jobs:
   bot:
     runs-on: ubuntu-latest
@@ -25,6 +28,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: |
+          git config user.name "bell-bot"
+          git config user.email "bell-bot@users.noreply.github.com"
       - run: python -u main.py trade ${{ inputs.mode == 'report' && 'report' || '' }}
         env:
           ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}

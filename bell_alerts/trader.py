@@ -150,6 +150,40 @@ class Trader:
             out.append(f"{s}: {'closed' if self.armed else 'would close'} {p['qty']} sh, P&L ${float(p['unrealized_pl']):+,.2f}")
         return out
 
+    def snapshot(self, log=()):
+        """Everything the dashboard shows, as plain JSON."""
+        held = self.b.positions()
+        a = self.b.account()
+        trades = []
+        for o in self.refresh_lots():
+            legs = {l["type"]: l for l in o.get("legs") or []}
+            stop, tgt = legs.get("stop") or {}, legs.get("limit") or {}
+            entry = float(o["filled_avg_price"]) if o.get("filled_avg_price") else None
+            qty = float(o.get("filled_qty") or 0)
+            exit_px, exit_kind = None, None
+            for kind, l in (("target", tgt), ("stop", stop)):
+                if l.get("status") == "filled":
+                    exit_px, exit_kind = float(l["filled_avg_price"]), kind
+            if not exit_px and entry and o["symbol"] not in held and o["status"] == "filled":
+                exit_kind = "closed"
+            pnl = (exit_px - entry) * qty if exit_px and entry else None
+            if pnl is None and entry and o["symbol"] in held:
+                p = held[o["symbol"]]
+                pnl = (float(p["current_price"]) - entry) * qty
+            hm = o["client_order_id"][-4:]
+            trades.append(dict(
+                sym=o["symbol"], time=f"{hm[:2]}:{hm[2:]}", status=o["status"], qty=int(float(o["qty"])), filled=int(qty),
+                limit=float(o["limit_price"]) if o.get("limit_price") else None, entry=entry,
+                stop=float(stop["stop_price"]) if stop.get("stop_price") else None,
+                target=float(tgt["limit_price"]) if tgt.get("limit_price") else None,
+                exit=exit_px, result=exit_kind or ("open" if entry else o["status"]),
+                pnl=round(pnl, 2) if pnl is not None else None, r=round(pnl / self.risk, 2) if pnl is not None else None))
+        eq, last = float(a["equity"]), float(a["last_equity"])
+        return dict(date=self.date, asOf=datetime.now(ET).isoformat(timespec="seconds"), mode=self.mode,
+                    armed=self.armed, risk=self.risk, maxTrades=self.max_trades, maxLossR=self.max_loss_r,
+                    halted=self.halted, equity=eq, dayPnl=round(eq - last, 2), dayR=round((eq - last) / self.risk, 2),
+                    trades=trades, log=list(log)[-200:])
+
     def report(self):
         """Today's bot orders and the day's P&L in R."""
         lines = []

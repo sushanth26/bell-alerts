@@ -293,19 +293,23 @@ def trade(cmd=None):
     now = time.time()
     e = datetime.fromtimestamp(now, ET)
     date, mins = e.date().isoformat(), e.hour * 60 + e.minute
-    bot = Trader(date, RISK)
+    log = load_log(date)
+
+    def say(msg):
+        line = f"{datetime.now(ET):%H:%M} {msg}"
+        print(line)
+        log.append(line)
+
+    bot = Trader(date, RISK, log=say)
     print(f"Bell Bot {date} · {bot.mode} · risk {px(RISK)} · max {bot.max_trades} trades · stop at -{bot.max_loss_r:g}R")
-    if cmd == "report":
+    if cmd == "report" or e.weekday() >= 5 or not (9 * 60 <= mins < LAST_MIN or 15 * 60 + 30 <= mins < 16 * 60):
         print("\n".join(bot.report()) or "No bot orders today.")
-        return
-    if e.weekday() >= 5:
-        print("Weekend: nothing to do.")
+        publish(bot, log)
         return
     if 15 * 60 + 30 <= mins < 16 * 60:
-        print("\n".join(bot.flatten()) or "Nothing to close.")
-        return
-    if not (9 * 60 <= mins < LAST_MIN):
-        print(f"Outside trading windows ({e:%H:%M} ET): nothing to do.")
+        for line in bot.flatten() or ["Nothing to close at the end of the day."]:
+            say(line)
+        publish(bot, log)
         return
     api = Alpaca()
     day = Day(api, date)
@@ -315,7 +319,8 @@ def trade(cmd=None):
     if not day.has_bar("SPY", day.open_t):
         print("No SPY bar at 9:30: market closed today.")
         return
-    print(f"Watching {len(uni)} names: {' '.join(uni)}")
+    say(f"Watching {len(uni)} names: {' '.join(uni)}" + (f" (9:15 list: {' '.join(day.list915)})" if day.list915 else ""))
+    publish(bot, log)
     seen = set()
     bar_end = max(et_at(date, 9, 40), (int(time.time()) // 300) * 300)
     while et_min_of(bar_end) < LAST_MIN:
@@ -331,14 +336,54 @@ def trade(cmd=None):
                 k = f"{r['sym']}|{r['t']}"
                 if k not in seen:
                     seen.add(k)
-                    print(f"{hhmm(r['t'])} {bot.on_alert(r, late=now - r['t'] > 6 * 60)}")
+                    say(f"{hhmm(r['t'])} alert · {bot.on_alert(r, late=now - r['t'] > 6 * 60)}")
             bot.expire_entries()
         except Exception as err:
-            print(f"{hhmm(bar_end)} error: {err}")
+            say(f"{hhmm(bar_end)} error: {err}")
+        publish(bot, log)
         bar_end += 300
     wait_until(bar_end + 6)
     bot.expire_entries()
     print("\n".join(bot.report()))
+    publish(bot, log)
+
+
+def load_log(date):
+    import json
+    p = ROOT / "data" / "bot" / f"{date}.json"
+    try:
+        return json.loads(p.read_text()).get("log", [])
+    except Exception:
+        return []
+
+
+def publish(bot, log):
+    """Write the dashboard's data (data/bot/<date>.json + status.json) and push it, when running on GitHub."""
+    import json
+    import subprocess
+    try:
+        snap = json.dumps(bot.snapshot(log), indent=1)
+    except Exception as err:
+        print(f"dashboard snapshot failed: {err}")
+        return
+    d = ROOT / "data" / "bot"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{bot.date}.json").write_text(snap)
+    (d / "status.json").write_text(snap)
+    days = sorted(p.stem for p in d.glob("20*.json"))
+    (d / "days.json").write_text(json.dumps(days))
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    git = lambda *a: subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, text=True)
+    git("add", "data/bot")
+    if git("diff", "--cached", "--quiet").returncode == 0:
+        return
+    git("commit", "-m", f"Bot status {datetime.now(ET):%Y-%m-%d %H:%M} ET")
+    for _ in range(3):
+        if git("push").returncode == 0:
+            return
+        git("pull", "--rebase", "-X", "theirs")
+    print("dashboard push failed")
 
 
 if __name__ == "__main__":
