@@ -36,6 +36,25 @@ def read_list(name):
     return [s.strip().upper() for line in p.read_text().splitlines() for s in line.split("#")[0].split() if s.strip()]
 
 
+def desk_list915(date):
+    """The desk's 9:15 shortlist, which the 9:05 ET Claude task writes to data/list915.txt on GitHub.
+    Read live from GitHub (the checkout happens at 9:20, possibly before it lands); used only if dated today."""
+    import urllib.request
+    repo = os.environ.get("GITHUB_REPOSITORY", "sushanth26/bell-alerts")
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/contents/data/list915.txt",
+                                 headers={"Accept": "application/vnd.github.raw", "Cache-Control": "no-cache"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            lines = r.read().decode().splitlines()
+    except Exception as e:
+        print(f"9:15 list not read: {e}")
+        return []
+    if not lines or date not in lines[0]:
+        print(f"9:15 list is not from {date}: {lines[0] if lines else 'empty'}")
+        return []
+    return [s.strip().upper() for line in lines[1:] for s in line.split("#")[0].split() if s.strip()]
+
+
 def et_at(date, h, m):
     return int(datetime.fromisoformat(f"{date}T{h:02d}:{m:02d}:00").replace(tzinfo=ET).timestamp())
 
@@ -77,7 +96,8 @@ class Day:
                 gaps.append((b[1] / pc - 1, s))
         gaps.sort(reverse=True)
         self.gaps = {s: g for g, s in gaps[:MAX_NAMES]}
-        extra = [s for s in read_list("watchlist.txt") if s not in self.gaps]
+        self.list915 = desk_list915(self.date)
+        extra = [s for s in dict.fromkeys(self.list915 + read_list("watchlist.txt")) if s not in self.gaps]
         self.uni = [s for _, s in gaps[:MAX_NAMES]] + extra
         return self.uni
 
