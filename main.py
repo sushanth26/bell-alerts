@@ -77,8 +77,8 @@ class Day:
         self.open_t = et_at(date, 9, 30)
 
     def screen(self, now):
-        """Desk Backtest screen: pool names > $15, prior-day vol > 2M, 10-day avg vol > 5M, prior day +1.5%,
-        gap >= 2% at the open; top MAX_NAMES by gap, plus the desk's 9:15 list and watchlist.txt.
+        """Desk screen: pool names > $15, prior-day vol > 2M, 10-day avg vol > 2M, gap >= 2% at the open
+        (prior day +1.5% and the 5M average were dropped on 2026-10-23); top MAX_NAMES by gap, plus the desk's 9:15 list and watchlist.txt.
         rescan() then adds names as they move, like the desk's scanner."""
         pool = read_list("pool.txt")
         d = self.api.bars(pool, "1Day", days_ago(self.open_t, 40), et_at(self.date, 0, 0), feed="sip")
@@ -87,9 +87,9 @@ class Day:
             arr = [b for b in arr if datetime.fromtimestamp(b[0], ET).date().isoformat() < self.date]
             if len(arr) < 12:
                 continue
-            prev, prev2 = arr[-1], arr[-2]
+            prev = arr[-1]
             avg10 = sum(b[5] for b in arr[-10:]) / 10
-            if prev[4] > 15 and prev[5] > 2e6 and avg10 > 5e6 and prev[4] / prev2[4] - 1 > 0.015:
+            if prev[4] > 15 and prev[5] > 2e6 and avg10 > 2e6:
                 cand[s] = prev[4]
         first = self.api.bars(list(cand), "5Min", self.open_t, self.open_t + 300, feed=self._feed5(now))
         gaps = []
