@@ -26,6 +26,8 @@ from bell_alerts.engine import ET, FIRST_MIN, LAST_MIN, proven_day, spy_ctx
 ROOT = Path(__file__).parent
 RISK = float(os.environ.get("RISK", "100"))
 MAX_NAMES = int(os.environ.get("MAX_NAMES", "30"))
+MAX_WATCH = 60          # the desk watches at most 60 names a day
+RESCAN_EVERY = 5  # minutes: the scanner reruns on every 5-minute close from 9:35, like the desk
 FOOT = "<i>Research only, not investment advice.</i>"
 
 
@@ -76,7 +78,8 @@ class Day:
 
     def screen(self, now):
         """Desk Backtest screen: pool names > $15, prior-day vol > 2M, 10-day avg vol > 5M, prior day +1.5%,
-        gap >= 2% at the open; top MAX_NAMES by gap, plus everything in watchlist.txt."""
+        gap >= 2% at the open; top MAX_NAMES by gap, plus the desk's 9:15 list and watchlist.txt.
+        rescan() then adds names as they move, like the desk's scanner."""
         pool = read_list("pool.txt")
         d = self.api.bars(pool, "1Day", days_ago(self.open_t, 40), et_at(self.date, 0, 0), feed="sip")
         cand = {}
@@ -95,6 +98,9 @@ class Day:
             if b and b[1] / pc - 1 >= 0.02:
                 gaps.append((b[1] / pc - 1, s))
         gaps.sort(reverse=True)
+        self.cand = cand
+        self.scanned = set()
+        self.joined = {}  # name -> when the rescan added it (names from the opening screen have none)
         self.gaps = {s: g for g, s in gaps[:MAX_NAMES]}
         self.list915 = desk_list915(self.date)
         extra = [s for s in dict.fromkeys(self.list915 + read_list("watchlist.txt")) if s not in self.gaps]
@@ -105,13 +111,44 @@ class Day:
         # VWAP and rel vol always come from one feed, the configured one
         return self.api.feed
 
-    def load(self, now):
-        syms = self.uni + ["SPY"]
-        self.b5 = {s: regular(v) for s, v in self.api.bars(syms, "5Min", days_ago(self.open_t, 7), now, feed=self._feed5(now)).items()}
-        self.m10 = self.api.bars_mixed(syms, "10Min", days_ago(self.open_t, 7), now)
-        self.h1 = self.api.bars_mixed(syms, "1Hour", days_ago(self.open_t, 90), now)
-        d30 = self.api.bars(self.uni, "30Min", days_ago(self.open_t, 80), et_at(self.date, 0, 0), feed="sip")
-        self.daily = {s: [b for b in daily_from_intraday(v) if b[0] < self.date] for s, v in d30.items()}
+    def load(self, now, syms=None):
+        """Bars for `syms` (default: the whole universe plus SPY), added to what is already loaded."""
+        if syms is None:
+            syms = self.uni + ["SPY"]
+            self.b5, self.m10, self.h1, self.daily = {}, {}, {}, {}
+        if not syms:
+            return
+        self.b5.update({s: regular(v) for s, v in self.api.bars(syms, "5Min", days_ago(self.open_t, 7), now, feed=self._feed5(now)).items()})
+        self.m10.update(self.api.bars_mixed(syms, "10Min", days_ago(self.open_t, 7), now))
+        self.h1.update(self.api.bars_mixed(syms, "1Hour", days_ago(self.open_t, 90), now))
+        names = [s for s in syms if s != "SPY"]
+        d30 = self.api.bars(names, "30Min", days_ago(self.open_t, 80), et_at(self.date, 0, 0), feed="sip") if names else {}
+        self.daily.update({s: [b for b in daily_from_intraday(v) if b[0] < self.date] for s, v in d30.items()})
+
+    def rescan(self, now):
+        """The desk's scanner: on every 5-minute close from 9:35 to 11:00, the top MAX_NAMES screen names up > 2% on
+        the prior close join the watch list for the rest of the day (at most MAX_WATCH). Returns the new names."""
+        checks = [t for t in range(et_at(self.date, 9, 35), min(now, et_at(self.date, 11, 0)) + 1, RESCAN_EVERY * 60)
+                  if t not in self.scanned]
+        if not checks or not self.cand:
+            return []
+        b = self.api.bars(list(self.cand), "5Min", self.open_t, now, feed=self._feed5(now))
+        new = []
+        for t in checks:
+            self.scanned.add(t)
+            movers = []
+            for s, pc in self.cand.items():
+                last = [x for x in regular(b.get(s, [])) if x[0] + 300 <= t]
+                if last and last[-1][4] / pc - 1 > 0.02:
+                    movers.append((last[-1][4] / pc - 1, s))
+            for g, s in sorted(movers, reverse=True)[:MAX_NAMES]:
+                if s not in self.uni and len(self.uni) < MAX_WATCH:
+                    self.uni.append(s)
+                    self.joined[s] = t
+                    self.gaps[s] = g
+                    new.append(s)
+        self.load(now, new)
+        return new
 
     def refresh(self, now):
         """Pull today's newest bars and merge them in."""
@@ -133,7 +170,7 @@ class Day:
         for s in self.uni:
             tf = {"10m": self.m10.get(s, []), "1h": self.h1.get(s, []), "4h": to_4h(self.h1.get(s, []))}
             r, _ = proven_day(s, self.b5.get(s), tf, self.daily.get(s, []), X, now, self.date, RISK)
-            rows += r
+            rows += [x for x in r if x["t"] >= self.joined.get(s, 0)]  # nothing from before the name was watched
         return sorted(rows, key=lambda r: r["t"])
 
 
@@ -211,6 +248,9 @@ def run():
                 if day.has_bar("SPY", bar_end - 300):
                     break
                 time.sleep(6)
+            new = day.rescan(time.time())
+            if new:
+                telegram.send(f"🔎 Now watching +{len(new)}: {escape(', '.join(f'{s} {day.gaps[s] * 100:+.1f}%' for s in new))}\n{FOOT}")
             now = time.time()
             for r in day.alerts(now):
                 k = f"{r['sym']}|{r['t']}"
@@ -242,6 +282,7 @@ def replay(date, send=False):
     close = min(et_at(date, 16, 0), int(time.time()))
     uni = day.screen(close)
     day.load(close)
+    day.rescan(close)
     print(f"{date}: {len(uni)} names ({api.feed}): {' '.join(uni)}\n")
     rows = day.alerts(close)
     for r in rows:
@@ -265,6 +306,7 @@ def record(date=None):
     close = min(et_at(date, 16, 0), int(now))
     uni = day.screen(close)
     day.load(close)
+    day.rescan(close)
     if not day.has_bar("SPY", day.open_t):
         print(f"{date}: no SPY bars, market closed. Nothing recorded.")
         return
@@ -331,6 +373,9 @@ def trade(cmd=None):
                 if day.has_bar("SPY", bar_end - 300):
                     break
                 time.sleep(6)
+            new = day.rescan(time.time())
+            if new:
+                say(f"Now watching +{len(new)}: {' '.join(new)}")
             now = time.time()
             for r in day.alerts(now):
                 k = f"{r['sym']}|{r['t']}"
