@@ -1,0 +1,15 @@
+{
+ "date": "2026-10-28",
+ "asOf": "2026-10-28T14:55:22-04:00",
+ "mode": "PAPER",
+ "armed": true,
+ "risk": 100.0,
+ "maxTrades": 6,
+ "maxLossR": 3.0,
+ "halted": null,
+ "equity": 100000.0,
+ "dayPnl": 0.0,
+ "dayR": 0.0,
+ "trades": [],
+ "log": []
+}
