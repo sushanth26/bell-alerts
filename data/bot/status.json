@@ -1,6 +1,6 @@
 {
- "date": "2026-11-10",
- "asOf": "2026-11-10T20:14:52-05:00",
+ "date": "2026-11-11",
+ "asOf": "2026-11-11T15:14:32-05:00",
  "mode": "PAPER",
  "armed": true,
  "risk": 100.0,
@@ -11,7 +11,5 @@
  "dayPnl": 0.0,
  "dayR": 0.0,
  "trades": [],
- "log": [
-  "15:52 Nothing to close at the end of the day."
- ]
+ "log": []
 }
